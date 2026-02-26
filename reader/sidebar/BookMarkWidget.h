@@ -129,6 +129,8 @@ private:
      * 删除所有书签节点
      */
     void deleteAllItem();
+	bool isSheetValid() const;
+    bool isRowValid(int row) const;
 
 private:
     QPointer<DocSheet> m_sheet;
