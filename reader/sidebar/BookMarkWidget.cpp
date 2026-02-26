@@ -222,11 +222,15 @@ void BookMarkWidget::deleteItemByKey()
 
 void BookMarkWidget::deleteAllItem()
 {
-    if (!isSheetValid()) return;
+    if (!isSheetValid() || !m_pImageListView)
+        return;
+
+    auto *model = m_pImageListView->model();
+    if (!model)
+        return;
 
     QList<int> bookmarks;
-    const int rows = m_pImageListView->model()->rowCount();
-
+    const int rows = model->rowCount();
     bookmarks.reserve(rows);
 
     for (int i = 0; i < rows; ++i) {
