@@ -17,254 +17,293 @@
 #include <DGuiApplicationHelper>
 
 #include <QHBoxLayout>
+#include <QVBoxLayout>
 #include <QSet>
 
 DGUI_USE_NAMESPACE
 
-const int LEFTMINHEIGHT = 80;
+namespace {
+constexpr int LEFT_MIN_HEIGHT = 80;
+}
+
 BookMarkWidget::BookMarkWidget(DocSheet *sheet, DWidget *parent)
-    : BaseWidget(parent), m_sheet(sheet)
+    : BaseWidget(parent),
+      m_sheet(sheet)
 {
-    qCDebug(appLog) << "Creating BookMarkWidget for document:" << (sheet ? sheet->filePath() : "null");
+    qCDebug(appLog) << "Creating BookMarkWidget for document:"
+                    << (sheet ? sheet->filePath() : "null");
 
     initWidget();
     onUpdateTheme();
 }
 
-BookMarkWidget::~BookMarkWidget()
-{
-    // qCDebug(appLog) << "Destroying BookMarkWidget";
-}
+BookMarkWidget::~BookMarkWidget() = default;
 
 void BookMarkWidget::initWidget()
 {
     qCDebug(appLog) << "Initializing BookMarkWidget";
-    connect(DGuiApplicationHelper::instance(), &DGuiApplicationHelper::themeTypeChanged, this, &BookMarkWidget::onUpdateTheme);
+
+    connect(DGuiApplicationHelper::instance(),
+            &DGuiApplicationHelper::themeTypeChanged,
+            this,
+            &BookMarkWidget::onUpdateTheme);
 
     m_pImageListView = new SideBarImageListView(m_sheet, this);
     m_pImageListView->setAccessibleName("View_ImageList");
     m_pImageListView->setListType(E_SideBar::SIDE_BOOKMARK);
-    BookMarkDelegate *imageDelegate = new BookMarkDelegate(m_pImageListView);
-    m_pImageListView->setItemDelegate(imageDelegate);
+    m_pImageListView->setItemDelegate(new BookMarkDelegate(m_pImageListView));
 
     m_pAddBookMarkBtn = new DPushButton(this);
     m_pAddBookMarkBtn->setObjectName("BookmarkAddBtn");
     m_pAddBookMarkBtn->setAccessibleName("BookmarkAdd");
     m_pAddBookMarkBtn->setMinimumWidth(170);
     m_pAddBookMarkBtn->setText(tr("Add bookmark"));
+
     DFontSizeManager::instance()->bind(m_pAddBookMarkBtn, DFontSizeManager::T6);
-    connect(m_pAddBookMarkBtn, SIGNAL(clicked()), this, SLOT(onAddBookMarkClicked()));
 
-    QHBoxLayout *pHBoxLayout = new QHBoxLayout;
-    pHBoxLayout->setContentsMargins(10, 6, 10, 6);
-    pHBoxLayout->addWidget(m_pAddBookMarkBtn);
+    connect(m_pAddBookMarkBtn,
+            &DPushButton::clicked,
+            this,
+            &BookMarkWidget::onAddBookMarkClicked);
 
-    QVBoxLayout *pVBoxLayout = new QVBoxLayout;
-    pVBoxLayout->setContentsMargins(0, 10, 0, 0);
-    pVBoxLayout->setSpacing(0);
+    auto *buttonLayout = new QHBoxLayout;
+    buttonLayout->setContentsMargins(10, 6, 10, 6);
+    buttonLayout->addWidget(m_pAddBookMarkBtn);
 
-    pVBoxLayout->addWidget(m_pImageListView);
-    DHorizontalLine *line = new DHorizontalLine(this);
+    auto *mainLayout = new QVBoxLayout;
+    mainLayout->setContentsMargins(0, 10, 0, 0);
+    mainLayout->setSpacing(0);
+
+    mainLayout->addWidget(m_pImageListView);
+
+    auto *line = new DHorizontalLine(this);
     line->setAccessibleName("BookMarkLine");
-    pVBoxLayout->addWidget(line);
-    pVBoxLayout->addItem(pHBoxLayout);
-    this->setLayout(pVBoxLayout);
+    mainLayout->addWidget(line);
+    mainLayout->addLayout(buttonLayout);
 
-    connect(m_pImageListView, SIGNAL(sigListMenuClick(const int &)), SLOT(onListMenuClick(const int &)));
-    m_pImageListView->setItemSize(QSize(LEFTMINWIDTH, LEFTMINHEIGHT));
+    setLayout(mainLayout);
+
+    connect(m_pImageListView,
+            &SideBarImageListView::sigListMenuClick,
+            this,
+            &BookMarkWidget::onListMenuClick);
+
+    m_pImageListView->setItemSize(QSize(LEFTMINWIDTH, LEFT_MIN_HEIGHT));
+
     qCDebug(appLog) << "BookMarkWidget initialization completed";
+}
+
+// ---------------------- Navigation helpers ----------------------
+
+bool BookMarkWidget::isSheetValid() const
+{
+    if (m_sheet.isNull()) {
+        qCWarning(appLog) << "Operation skipped: sheet is null";
+        return false;
+    }
+    return true;
+}
+
+bool BookMarkWidget::isRowValid(int row) const
+{
+    if (!m_pImageListView)
+        return false;
+
+    auto *model = m_pImageListView->model();
+    if (!model)
+        return false;
+
+    return row >= 0 && row < model->rowCount();
 }
 
 
 void BookMarkWidget::prevPage()
 {
-    qCDebug(appLog) << "Navigating to previous bookmark, current row:" << m_pImageListView->currentIndex().row();
+    if (!isSheetValid()) return;
 
-    if (m_sheet.isNull()) {
-        qCWarning(appLog) << "Cannot navigate - sheet is null";
-        return;
-    }
+    int row = m_pImageListView->currentIndex().row() - 1;
+    if (!isRowValid(row)) return;
 
-    int curPage = m_pImageListView->currentIndex().row() - 1;
-    if (curPage < 0)
-        return;
-
-    m_sheet->jumpToIndex(m_pImageListView->getPageIndexForModelIndex(curPage));
-}
-
-void BookMarkWidget::pageUp()
-{
-    qCDebug(appLog) << "Performing page up navigation";
-
-    if (m_sheet.isNull()) {
-        qCWarning(appLog) << "Cannot page up - sheet is null";
-        return;
-    }
-
-    const QModelIndex &pageIndex = m_pImageListView->pageUpIndex();
-    if (!pageIndex.isValid())
-        return;
-
-    m_sheet->jumpToIndex(m_pImageListView->getPageIndexForModelIndex(pageIndex.row()));
+    m_sheet->jumpToIndex(
+        m_pImageListView->getPageIndexForModelIndex(row));
 }
 
 void BookMarkWidget::nextPage()
 {
-    qCDebug(appLog) << "Navigating to next bookmark, current row:" << m_pImageListView->currentIndex().row();
+    if (!isSheetValid()) return;
 
-    if (m_sheet.isNull()) {
-        qCWarning(appLog) << "Cannot navigate - sheet is null";
-        return;
-    }
+    int row = m_pImageListView->currentIndex().row() + 1;
+    if (!isRowValid(row)) return;
 
-    int curPage = m_pImageListView->currentIndex().row() + 1;
-    m_sheet->jumpToIndex(m_pImageListView->getPageIndexForModelIndex(curPage));
+    m_sheet->jumpToIndex(
+        m_pImageListView->getPageIndexForModelIndex(row));
+}
+
+void BookMarkWidget::pageUp()
+{
+    if (!isSheetValid()) return;
+
+    const QModelIndex idx = m_pImageListView->pageUpIndex();
+    if (!idx.isValid()) return;
+
+    m_sheet->jumpToIndex(
+        m_pImageListView->getPageIndexForModelIndex(idx.row()));
 }
 
 void BookMarkWidget::pageDown()
 {
-    qCDebug(appLog) << "Performing page down navigation";
+    if (!isSheetValid()) return;
 
-    if (m_sheet.isNull()) {
-        qCWarning(appLog) << "Cannot page down - sheet is null";
-        return;
-    }
+    const QModelIndex idx = m_pImageListView->pageDownIndex();
+    if (!idx.isValid()) return;
 
-    const QModelIndex &pageIndex = m_pImageListView->pageDownIndex();
-    if (!pageIndex.isValid())
-        return;
-
-    m_sheet->jumpToIndex(m_pImageListView->getPageIndexForModelIndex(pageIndex.row()));
+    m_sheet->jumpToIndex(
+        m_pImageListView->getPageIndexForModelIndex(idx.row()));
 }
+
+// ---------------------- State handling ----------------------
 
 void BookMarkWidget::handleOpenSuccess()
 {
-    qCDebug(appLog) << "Handling document open success, bookmark count:" << m_sheet->getBookMarkList().size();
+    if (!isSheetValid()) return;
 
-    if (bIshandOpenSuccess) {
-        qCDebug(appLog) << "Open success already handled, skipping";
-        return;
-    }
+    if (bIshandOpenSuccess) return;
     bIshandOpenSuccess = true;
-    const QSet<int> &pageList = m_sheet->getBookMarkList();
-    if (pageList.contains(m_sheet->currentIndex()))
-        m_pAddBookMarkBtn->setEnabled(false);
+
+    const QSet<int> &pages = m_sheet->getBookMarkList();
+
+    m_pAddBookMarkBtn->setEnabled(
+        !pages.contains(m_sheet->currentIndex()));
+
     m_pImageListView->handleOpenSuccess();
 }
 
 void BookMarkWidget::handlePage(int index)
 {
-    qCDebug(appLog) << "Handling page change to index:" << index;
-    bool result = m_pImageListView->scrollToIndex(index);
-    m_pAddBookMarkBtn->setDisabled(result);
-    qCDebug(appLog) << "Handling page change to index:" << index << "scroll result:" << result;
+    bool hasBookmark = m_pImageListView->scrollToIndex(index);
+    m_pAddBookMarkBtn->setDisabled(hasBookmark);
 }
 
 void BookMarkWidget::handleBookMark(int index, int state)
 {
-    qCDebug(appLog) << "Updating bookmark state - index:" << index << "state:" << (state ? "added" : "removed");
+    if (!isSheetValid()) return;
+
+    auto *model = m_pImageListView->getImageModel();
+    if (!model) return;
+
+    const int current = m_sheet->currentIndex();
 
     if (state) {
-        int nCurIndex = m_sheet->currentIndex();
-        if (nCurIndex == index) m_pAddBookMarkBtn->setEnabled(false);
-        m_pImageListView->getImageModel()->insertPageIndex(index);
+        if (current == index)
+            m_pAddBookMarkBtn->setEnabled(false);
+        model->insertPageIndex(index);
     } else {
-        int nCurIndex = m_sheet->currentIndex();
-        if (nCurIndex == index) m_pAddBookMarkBtn->setEnabled(true);
-        m_pImageListView->getImageModel()->removePageIndex(index);
+        if (current == index)
+            m_pAddBookMarkBtn->setEnabled(true);
+        model->removePageIndex(index);
     }
-    m_pImageListView->scrollToIndex(m_sheet->currentIndex(), true);
+
+    m_pImageListView->scrollToIndex(current, true);
 }
+
+// ---------------------- Delete operations ----------------------
 
 void BookMarkWidget::deleteItemByKey()
 {
-    qCDebug(appLog) << "Deleting bookmark by key";
+    if (!isSheetValid()) return;
 
-    int curIndex = m_pImageListView->getPageIndexForModelIndex(m_pImageListView->currentIndex().row());
-    if (curIndex >= 0) {
-        qCDebug(appLog) << "Removing bookmark at index:" << curIndex;
-        m_sheet->setBookMark(curIndex, false);
-    } else {
-        qCWarning(appLog) << "Invalid index for bookmark deletion";
-    }
+    int row = m_pImageListView->currentIndex().row();
+    if (!isRowValid(row)) return;
+
+    int pageIndex = m_pImageListView->getPageIndexForModelIndex(row);
+    if (pageIndex >= 0)
+        m_sheet->setBookMark(pageIndex, false);
 }
 
 void BookMarkWidget::deleteAllItem()
 {
-    qCDebug(appLog) << "Preparing to delete all bookmarks";
+    if (!isSheetValid() || !m_pImageListView)
+        return;
+
+    auto *model = m_pImageListView->model();
+    if (!model)
+        return;
 
     QList<int> bookmarks;
-    int itemsize = m_pImageListView->model()->rowCount();
-    for (int i = 0; i < itemsize; i++) {
-        int curIndex = m_pImageListView->getPageIndexForModelIndex(i);
-        if (curIndex >= 0) {
-            bookmarks << curIndex;
-        }
+    const int rows = model->rowCount();
+    bookmarks.reserve(rows);
+
+    for (int i = 0; i < rows; ++i) {
+        int pageIndex = m_pImageListView->getPageIndexForModelIndex(i);
+        if (pageIndex >= 0)
+            bookmarks.append(pageIndex);
     }
-    m_sheet->setBookMarks(bookmarks, false);
+
+    if (!bookmarks.isEmpty())
+        m_sheet->setBookMarks(bookmarks, false);
 }
+
+// ---------------------- UI actions ----------------------
 
 void BookMarkWidget::onAddBookMarkClicked()
 {
-    qCDebug(appLog) << "Add bookmark button clicked";
-    if (m_sheet.isNull()) {
-        qCWarning(appLog) << "Cannot add bookmark - sheet is null";
-        return;
-    }
-    int nPage = m_sheet->currentIndex();
-    m_sheet->setBookMark(nPage, true);
+    if (!isSheetValid()) return;
+
+    m_sheet->setBookMark(m_sheet->currentIndex(), true);
 }
 
 void BookMarkWidget::adaptWindowSize(const double &scale)
 {
-    qCDebug(appLog) << "Adapting window size with scale factor:" << scale;
+    if (!m_pImageListView)
+        return;
 
     m_pImageListView->setProperty("adaptScale", scale);
-    m_pImageListView->setItemSize(QSize(static_cast<int>(LEFTMINWIDTH * scale), LEFTMINHEIGHT));
+    m_pImageListView->setItemSize(
+        QSize(static_cast<int>(LEFTMINWIDTH * scale), LEFT_MIN_HEIGHT));
+
     m_pImageListView->reset();
-    m_pImageListView->scrollToIndex(m_sheet->currentIndex(), false);
+
+    // Only guard the sheet-dependent scroll logic
+    if (!m_sheet.isNull()) {
+        m_pImageListView->scrollToIndex(m_sheet->currentIndex(), false);
+    }
 }
+
 
 void BookMarkWidget::showMenu()
 {
-    qCDebug(appLog) << "Showing bookmark context menu, item count:" << (m_pImageListView ? m_pImageListView->count() : 0);
-
-    if (m_pImageListView && m_pImageListView->count()) {
+    if (m_pImageListView && m_pImageListView->count() > 0)
         m_pImageListView->showMenu();
-    }
 }
 
 void BookMarkWidget::onUpdateTheme()
 {
-    qCDebug(appLog) << "Updating widget theme colors";
+    QPalette palette = QApplication::palette();
+    palette.setColor(QPalette::Window, palette.color(QPalette::Base));
 
-    QPalette plt = QApplication::palette();
-    plt.setColor(QPalette::Window, plt.color(QPalette::Base));
-    setPalette(plt);
-
-    m_pAddBookMarkBtn->setPalette(plt);
+    setPalette(palette);
+    m_pAddBookMarkBtn->setPalette(palette);
 }
 
-void BookMarkWidget::onListMenuClick(const int &iType)
+void BookMarkWidget::onListMenuClick(const int &type)
 {
-    qCDebug(appLog) << "Bookmark list menu action triggered, type:" << iType <<
-            (iType == E_BOOKMARK_DELETE ? "(Delete)" : "(Delete All)");
-
-    if (iType == E_BOOKMARK_DELETE) {
-        qCDebug(appLog) << "Deleting bookmark by key";
+    if (type == E_BOOKMARK_DELETE) {
         deleteItemByKey();
-    } else if (iType == E_BOOKMARK_DELETE_ALL) {
-        qCDebug(appLog) << "Deleting all bookmarks";
-        int result = SaveDialog::showTipDialog(tr("Are you sure you want to delete all bookmarks?") ,this);
-        if (result == 1) {
-            qCDebug(appLog) << "User confirmed deletion of all bookmarks";
+        return;
+    }
+
+    if (type == E_BOOKMARK_DELETE_ALL) {
+        int result = SaveDialog::showTipDialog(
+            tr("Are you sure you want to delete all bookmarks?"), this);
+
+        if (result == 1)
             deleteAllItem();
-        }
     }
 }
 
-void BookMarkWidget::setTabOrderWidget(QList<QWidget *> &tabWidgetlst)
+// ---------------------- Accessibility ----------------------
+
+void BookMarkWidget::setTabOrderWidget(QList<QWidget *> &tabWidgets)
 {
-    qCDebug(appLog) << "Setting tab order widget";
-    tabWidgetlst << m_pAddBookMarkBtn;
+    tabWidgets << m_pAddBookMarkBtn;
 }
