@@ -250,15 +250,21 @@ void BookMarkWidget::onAddBookMarkClicked()
 
 void BookMarkWidget::adaptWindowSize(const double &scale)
 {
-    if (!isSheetValid()) return;
+    if (!m_pImageListView)
+        return;
 
     m_pImageListView->setProperty("adaptScale", scale);
     m_pImageListView->setItemSize(
         QSize(static_cast<int>(LEFTMINWIDTH * scale), LEFT_MIN_HEIGHT));
 
     m_pImageListView->reset();
-    m_pImageListView->scrollToIndex(m_sheet->currentIndex(), false);
+
+    // Only guard the sheet-dependent scroll logic
+    if (!m_sheet.isNull()) {
+        m_pImageListView->scrollToIndex(m_sheet->currentIndex(), false);
+    }
 }
+
 
 void BookMarkWidget::showMenu()
 {
