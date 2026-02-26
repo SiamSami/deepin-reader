@@ -106,8 +106,16 @@ bool BookMarkWidget::isSheetValid() const
 
 bool BookMarkWidget::isRowValid(int row) const
 {
-    return row >= 0 && row < m_pImageListView->model()->rowCount();
+    if (!m_pImageListView)
+        return false;
+
+    auto *model = m_pImageListView->model();
+    if (!model)
+        return false;
+
+    return row >= 0 && row < model->rowCount();
 }
+
 
 void BookMarkWidget::prevPage()
 {
